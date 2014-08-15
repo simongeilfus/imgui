@@ -151,6 +151,9 @@ namespace ImGui
 	void		PopAllowKeyboardFocus();
 	void		PushStyleColor(ImGuiCol idx, const ImVec4& col);
 	void		PopStyleColor();
+    
+	void		PushTexCoord(const ImVec2& upper_left, const ImVec2& lower_right);
+	void		PopTexCoord();
 
 	// Layout
 	void		Separator();														// horizontal line
@@ -363,6 +366,7 @@ struct ImGuiStyle
 	float		ColumnsMinSpacing;
 	float		ScrollBarWidth;
 	ImVec4		Colors[ImGuiCol_COUNT];
+    ImVec4      TexCoordCorners;
 
 	ImGuiStyle();
 };
@@ -546,7 +550,7 @@ struct ImDrawList
 	void PushClipRect(const ImVec4& clip_rect);
 	void PopClipRect();
 	void ReserveVertices(unsigned int vtx_count);
-	void AddVtx(const ImVec2& pos, ImU32 col);
+	void AddVtx(const ImVec2& pos, ImU32 col, const ImVec2& uv = IMGUI_FONT_TEX_UV_FOR_WHITE);
 	void AddVtxLine(const ImVec2& a, const ImVec2& b, ImU32 col);
 
 	// Primitives

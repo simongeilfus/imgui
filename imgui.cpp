@@ -223,6 +223,8 @@ ImGuiStyle::ImGuiStyle()
 	TreeNodeSpacing			= 22.0f;
 	ColumnsMinSpacing		= 6.0f;				// Minimum space between two columns
 	ScrollBarWidth			= 16.0f;
+    
+    TexCoordCorners         = ImVec4(IMGUI_FONT_TEX_UV_FOR_WHITE.x, IMGUI_FONT_TEX_UV_FOR_WHITE.y, IMGUI_FONT_TEX_UV_FOR_WHITE.x, IMGUI_FONT_TEX_UV_FOR_WHITE.y);
 
 	Colors[ImGuiCol_Text]					= ImVec4(0.90f, 0.90f, 0.90f, 1.00f);
 	Colors[ImGuiCol_WindowBg]				= ImVec4(0.00f, 0.00f, 0.00f, 1.00f);
@@ -475,6 +477,11 @@ struct ImGuiColMod	// Color/style modifier, backup of modified data so we can re
 	ImVec4		PreviousValue;
 };
 
+struct ImGuiTexCoordMod	// TexCoord/style modifier, backup of modified data so we can restore it
+{
+	ImVec4		PreviousValue;
+};
+
 struct ImGuiAabb	// 2D axis aligned bounding-box
 {
 	ImVec2		Min;
@@ -503,29 +510,30 @@ struct ImGuiAabb	// 2D axis aligned bounding-box
 // Temporary per-window data, reset at the beginning of the frame
 struct ImGuiDrawContext
 {
-	ImVec2					CursorPos;
-	ImVec2					CursorPosPrevLine;
-	ImVec2					CursorStartPos;
-	float					CurrentLineHeight;
-	float					PrevLineHeight;
-	float					LogLineHeight;
-	int						TreeDepth;
-	ImGuiAabb				LastItemAabb;
-	bool					LastItemHovered;
-	ImVector<ImGuiWindow*>	ChildWindows;
-	ImVector<bool>			AllowKeyboardFocus;
-	ImVector<float>			ItemWidth;
-	ImVector<ImGuiColMod>	ColorModifiers;
-	ImGuiColorEditMode		ColorEditMode;
-	ImGuiStorage*			StateStorage;
-	int						OpenNextNode;
+	ImVec2                      CursorPos;
+	ImVec2                      CursorPosPrevLine;
+	ImVec2                      CursorStartPos;
+	float                       CurrentLineHeight;
+	float                       PrevLineHeight;
+	float                       LogLineHeight;
+	int                         TreeDepth;
+	ImGuiAabb                   LastItemAabb;
+	bool                        LastItemHovered;
+	ImVector<ImGuiWindow*>      ChildWindows;
+	ImVector<bool>              AllowKeyboardFocus;
+	ImVector<float>             ItemWidth;
+	ImVector<ImGuiTexCoordMod>  TexCoordModifiers;
+	ImVector<ImGuiColMod>       ColorModifiers;
+	ImGuiColorEditMode          ColorEditMode;
+	ImGuiStorage*               StateStorage;
+	int                         OpenNextNode;
 
-	float					ColumnStartX;
-	int						ColumnCurrent;
-	int						ColumnsCount;
-	bool					ColumnsShowBorders;
-	ImVec2					ColumnsStartCursorPos;
-	ImGuiID					ColumnsSetID;
+	float                       ColumnStartX;
+	int                         ColumnCurrent;
+	int                         ColumnsCount;
+	bool                        ColumnsShowBorders;
+	ImVec2                      ColumnsStartCursorPos;
+	ImGuiID                     ColumnsSetID;
 
 	ImGuiDrawContext()
 	{
@@ -2220,6 +2228,28 @@ void PopStyleColor()
 	ImGuiColMod& backup = window->DC.ColorModifiers.back();
 	g.Style.Colors[backup.Col] = backup.PreviousValue;
 	window->DC.ColorModifiers.pop_back();
+}
+    
+void PushTexCoord(const ImVec2& upper_left, const ImVec2& lower_right)
+{
+    ImGuiState& g = GImGui;
+    ImGuiWindow* window = GetCurrentWindow();
+        
+    ImVec4 corners = ImVec4( upper_left.x, upper_left.y, lower_right.x, lower_right.y );
+        
+    ImGuiTexCoordMod backup;
+    backup.PreviousValue = g.Style.TexCoordCorners;
+    window->DC.TexCoordModifiers.push_back(backup);
+    g.Style.TexCoordCorners = corners;
+}
+void PopTexCoord()
+{
+    ImGuiState& g = GImGui;
+    ImGuiWindow* window = GetCurrentWindow();
+        
+    ImGuiTexCoordMod& backup = window->DC.TexCoordModifiers.back();
+    g.Style.TexCoordCorners = backup.PreviousValue;
+    window->DC.TexCoordModifiers.pop_back();
 }
 
 const char* GetStyleColorName(ImGuiCol idx)
@@ -4718,11 +4748,11 @@ void ImDrawList::ReserveVertices(unsigned int vtx_count)
 	}
 }
 
-void ImDrawList::AddVtx(const ImVec2& pos, ImU32 col)
+void ImDrawList::AddVtx(const ImVec2& pos, ImU32 col, const ImVec2& uv)
 {
 	vtx_write->pos = pos;
 	vtx_write->col = col;
-	vtx_write->uv = IMGUI_FONT_TEX_UV_FOR_WHITE;
+	vtx_write->uv = uv;
 	vtx_write++;
 }
 
@@ -4824,17 +4854,24 @@ void ImDrawList::AddRectFilled(const ImVec2& a, const ImVec2& b, ImU32 col, floa
 	float r = rounding;
 	r = ImMin(r, fabsf(b.x-a.x) * ( ((rounding_corners&(1|2))==(1|2)) || ((rounding_corners&(4|8))==(4|8)) ? 0.5f : 1.0f ));
 	r = ImMin(r, fabsf(b.y-a.y) * ( ((rounding_corners&(1|8))==(1|8)) || ((rounding_corners&(2|4))==(2|4)) ? 0.5f : 1.0f ));
-
+    
 	if (r == 0.0f || rounding_corners == 0)
 	{
 		// Use triangle so we can merge more draw calls together (at the cost of extra vertices)
 		ReserveVertices(6);
-		AddVtx(ImVec2(a.x,a.y), col);
-		AddVtx(ImVec2(b.x,a.y), col);
-		AddVtx(ImVec2(b.x,b.y), col);
-		AddVtx(ImVec2(a.x,a.y), col);
-		AddVtx(ImVec2(b.x,b.y), col);
-		AddVtx(ImVec2(a.x,b.y), col);
+    
+        ImGuiState& g = GImGui;
+        ImVec4 uvCorners = ImVec4(IMGUI_FONT_TEX_UV_FOR_WHITE.x, IMGUI_FONT_TEX_UV_FOR_WHITE.y, IMGUI_FONT_TEX_UV_FOR_WHITE.x, IMGUI_FONT_TEX_UV_FOR_WHITE.y);
+        if( g.Style.TexCoordCorners.x != 0 ){
+            uvCorners = g.Style.TexCoordCorners;
+        }
+        
+		AddVtx(ImVec2(a.x,a.y), col, ImVec2( uvCorners.x, uvCorners.y ));
+		AddVtx(ImVec2(b.x,a.y), col, ImVec2( uvCorners.z, uvCorners.y ));
+		AddVtx(ImVec2(b.x,b.y), col, ImVec2( uvCorners.z, uvCorners.w ));
+		AddVtx(ImVec2(a.x,a.y), col, ImVec2( uvCorners.x, uvCorners.y ));
+		AddVtx(ImVec2(b.x,b.y), col, ImVec2( uvCorners.z, uvCorners.w ));
+		AddVtx(ImVec2(a.x,b.y), col, ImVec2( uvCorners.x, uvCorners.w ));
 	}
 	else
 	{
